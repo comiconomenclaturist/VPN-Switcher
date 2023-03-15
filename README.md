@@ -4,9 +4,9 @@ The router needs to be manually configured with an ExpressVPN ovpn file and SSH 
 
 
 ## Installation
-`git clone https://github.com/comiconomenclaturist/VPN-Switcher.git`
-`cd VPN-Switcher`
-`pip install -r requirements.txt`
-`python setup.py py2app`
+`git clone https://github.com/comiconomenclaturist/VPN-Switcher.git`  
+`cd VPN-Switcher`  
+`pip install -r requirements.txt`  
+`python setup.py py2app`  
 
 Then copy `./dist/VPN Switcher.app` to the Applications folder.
