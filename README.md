@@ -2,6 +2,8 @@
 A MacOS menubar app to switch ExpressVPN servers on a DD-WRT router.
 The router needs to be manually configured with an ExpressVPN ovpn file and SSH access needs to be enabled.
 
+## Screenshot
+![Image](screenshot.png)
 
 ## Installation
 `git clone https://github.com/comiconomenclaturist/VPN-Switcher.git`  
