@@ -11,6 +11,10 @@ class Location:
 
     def __init__(self, file):
         self.file = file
+        self.continent = "Misc"
+        self.country = ""
+        self.flag = ""
+
         regex = re.compile(
             r"my_expressvpn_(?P<country>\w+)(?:_-_)?(?P<region>\w+)?(?:_-_(?P<number>\d))?_udp\.ovpn"
         )
@@ -20,14 +24,18 @@ class Location:
             self.region = (match.group("region") or "").title().replace("_", " ")
             self.number = match.group("number") or ""
 
+        if self.country:
+            for continent, countries in self.COUNTRY_CODES.items():
+                for code, country in countries.items():
+                    if country.lower() == self.country.lower():
+                        self.continent = continent
+                        self.country = country
+                        box = lambda ch: chr(ord(ch) + 0x1F1A5)
+                        self.flag = box(code[0]) + box(code[1])
+
     @property
     def name(self):
-        c = self.country
-        for countries in self.COUNTRY_CODES.values():
-            for country in countries.values():
-                if country.lower() == self.country.lower():
-                    c = country
-        text = " - ".join(filter(None, [c, self.region]))
+        text = " - ".join(filter(None, [self.country, self.region]))
         if self.number:
             return f"{self.flag} {text} [{self.number}]"
         return f"{self.flag} {text}"
@@ -38,23 +46,6 @@ class Location:
             if line.startswith("remote "):
                 server = line.split()[1]
                 return server
-
-    @property
-    def flag(self):
-        for countries in self.COUNTRY_CODES.values():
-            for code, name in countries.items():
-                if name.lower() == self.country.lower():
-                    box = lambda ch: chr(ord(ch) + 0x1F1A5)
-                    return box(code[0]) + box(code[1])
-        return ""
-
-    @property
-    def continent(self):
-        for continent, countries in self.COUNTRY_CODES.items():
-            for country in countries.values():
-                if country.lower() == self.country.lower():
-                    return continent
-        return "Misc"
 
     def __str__(self):
         return self.name
@@ -111,15 +102,17 @@ class VPNSwitcher(rumps.App):
         response = window.run()
         if response.clicked and response.text:
             file = shutil.copy(response.text, self.conf)
-            location = Location(file)
-            locations = self.menu.get("Locations")
+            self._add_location(Location(file))
 
-            if not locations.get(location.continent):
-                locations.add(rumps.MenuItem(location.continent, None))
-            if location not in locations.get(location.continent):
-                locations.get(location.continent).add(
-                    rumps.MenuItem(location, callback=app.switch)
-                )
+    def _add_location(self, location):
+        locations = self.menu.get("Locations")
+
+        if not locations.get(location.continent):
+            locations.add(rumps.MenuItem(location.continent, None))
+        if location not in locations.get(location.continent):
+            locations.get(location.continent).add(
+                rumps.MenuItem(location, callback=app.switch)
+            )
 
     def get_locations(self):
         for root, dirs, files in os.walk(self.conf):
@@ -141,7 +134,9 @@ class VPNSwitcher(rumps.App):
                             for loc in locations.get(key):
                                 if loc == location.name:
                                     locations[key][loc].state = 1
-                                    return
+                                    self.current = loc
+                                    self.menu.add(rumps.MenuItem(loc))
+                                    self.menu.get(self.current).state = 1
 
     def get_default_gateway_ip(self):
         response = subprocess.run(
@@ -188,6 +183,8 @@ class VPNSwitcher(rumps.App):
                             for country in locations[key].keys():
                                 if country == location.title:
                                     locations[key][country].state = 1
+                                    self.menu.get(self.current).title = country
+                                    self.menu.get(self.current).state = 1
                                 else:
                                     locations[key][country].state = 0
 
@@ -207,14 +204,9 @@ app.menu = [
 ]
 
 for location in app.get_locations():
-    if not app.menu.get("Locations").get(location.continent):
-        app.menu.get("Locations").add(rumps.MenuItem(location.continent, None))
-    app.menu.get("Locations").get(location.continent).add(
-        rumps.MenuItem(location, callback=app.switch),
-    )
+    app._add_location(location)
 
 app.get_current()
-
 
 if __name__ == "__main__":
     app.run()
