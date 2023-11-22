@@ -16,13 +16,18 @@ class Location:
         )
         match = re.match(regex, os.path.basename(file))
         if match:
-            self.country = (match.group("country") or "").upper()
+            self.country = (match.group("country") or "").upper().replace("_", " ")
             self.region = (match.group("region") or "").title().replace("_", " ")
             self.number = match.group("number") or ""
 
     @property
     def name(self):
-        text = " - ".join(filter(None, [self.country, self.region]))
+        c = self.country
+        for countries in self.COUNTRY_CODES.values():
+            for country in countries.values():
+                if country.lower() == self.country.lower():
+                    c = country
+        text = " - ".join(filter(None, [c, self.region]))
         if self.number:
             return f"{self.flag} {text} [{self.number}]"
         return f"{self.flag} {text}"
@@ -36,11 +41,20 @@ class Location:
 
     @property
     def flag(self):
-        for code, name in self.COUNTRY_CODES.items():
-            if name.lower() == self.country.lower():
-                box = lambda ch: chr(ord(ch) + 0x1F1A5)
-                return box(code[0]) + box(code[1])
+        for countries in self.COUNTRY_CODES.values():
+            for code, name in countries.items():
+                if name.lower() == self.country.lower():
+                    box = lambda ch: chr(ord(ch) + 0x1F1A5)
+                    return box(code[0]) + box(code[1])
         return ""
+
+    @property
+    def continent(self):
+        for continent, countries in self.COUNTRY_CODES.items():
+            for country in countries.values():
+                if country.lower() == self.country.lower():
+                    return continent
+        return "Misc"
 
     def __str__(self):
         return self.name
@@ -98,9 +112,12 @@ class VPNSwitcher(rumps.App):
         if response.clicked and response.text:
             file = shutil.copy(response.text, self.conf)
             location = Location(file)
+            locations = self.menu.get("Locations")
 
-            if location not in self.menu.get("Locations"):
-                self.menu.get("Locations").add(
+            if not locations.get(location.continent):
+                locations.add(rumps.MenuItem(location.continent, None))
+            if location not in locations.get(location.continent):
+                locations.get(location.continent).add(
                     rumps.MenuItem(location, callback=app.switch)
                 )
 
@@ -115,13 +132,14 @@ class VPNSwitcher(rumps.App):
         response = self.run_commands("nvram get openvpncl_remoteip")
         if response.stdout:
             server = "".join(chr(x) for x in response.stdout).strip()
-
             for location in self.get_locations():
                 if location.server == server:
-                    for loc in self.menu.get("Locations"):
-                        if loc == location.name:
-                            self.menu["Locations"][loc].state = 1
-                            return
+                    for key in self.menu.get("Locations").keys():
+                        if location.continent == key:
+                            for loc in self.menu.get("Locations").get(key):
+                                if loc == location.name:
+                                    self.menu["Locations"][key][loc].state = 1
+                                    return
 
     def get_default_gateway_ip(self):
         response = subprocess.run(
@@ -183,7 +201,11 @@ app.menu = [
 ]
 
 for location in app.get_locations():
-    app.menu.get("Locations").add(rumps.MenuItem(location, callback=app.switch))
+    if not app.menu.get("Locations").get(location.continent):
+        app.menu.get("Locations").add(rumps.MenuItem(location.continent, None))
+    app.menu.get("Locations").get(location.continent).add(
+        rumps.MenuItem(location, callback=app.switch),
+    )
 
 app.get_current()
 

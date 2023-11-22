@@ -3,7 +3,7 @@ from setuptools import setup
 APP = ["VPN Switcher.py"]
 DATA_FILES = ["icon_1024_x_1024_white.png", "country_codes.json"]
 OPTIONS = {
-    "argv_emulation": True,
+    "argv_emulation": False,
     "iconfile": "icon.icns",
     "plist": {
         "LSUIElement": True,
