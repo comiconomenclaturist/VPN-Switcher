@@ -132,13 +132,15 @@ class VPNSwitcher(rumps.App):
         response = self.run_commands("nvram get openvpncl_remoteip")
         if response.stdout:
             server = "".join(chr(x) for x in response.stdout).strip()
+            locations = self.menu.get("Locations")
+
             for location in self.get_locations():
                 if location.server == server:
-                    for key in self.menu.get("Locations").keys():
+                    for key in locations.keys():
                         if location.continent == key:
-                            for loc in self.menu.get("Locations").get(key):
+                            for loc in locations.get(key):
                                 if loc == location.name:
-                                    self.menu["Locations"][key][loc].state = 1
+                                    locations[key][loc].state = 1
                                     return
 
     def get_default_gateway_ip(self):
@@ -178,12 +180,16 @@ class VPNSwitcher(rumps.App):
                 ]
                 commands = "; ".join(commands)
                 response = self.run_commands(commands)
+                locations = self.menu.get("Locations")
+
                 if not response.stderr:
-                    for l in self.menu.get("Locations"):
-                        if l == location.title:
-                            self.menu["Locations"][l].state = 1
-                        else:
-                            self.menu["Locations"][l].state = 0
+                    for key in locations.keys():
+                        if isinstance(locations[key], rumps.MenuItem):
+                            for country in locations[key].keys():
+                                if country == location.title:
+                                    locations[key][country].state = 1
+                                else:
+                                    locations[key][country].state = 0
 
 
 app = VPNSwitcher()
