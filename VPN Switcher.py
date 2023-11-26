@@ -14,7 +14,7 @@ class VPNSwitcher(rumps.App):
         self.app_dir = rumps.application_support(self.name)
         self.preferences = os.path.join(self.app_dir, "preferences.json")
         self.conf = os.path.join(self.app_dir, "conf/")
-        self.recent = os.path.join(self.app_dir, "recent.txt")
+        self.recent = os.path.join(self.app_dir, "recent.json")
 
         os.makedirs(self.conf, exist_ok=True)
 
@@ -110,13 +110,14 @@ class VPNSwitcher(rumps.App):
                     self.menu.get(self.current).state = 1
 
     def add_recent(self, country):
-        with open(self.recent, "rb") as f:
-            countries = f.read().decode("UTF-8").splitlines()
+        countries = []
 
-        countries.reverse()
+        if os.path.exists(self.recent):
+            countries = json.loads(open(self.recent, "r").read())
+            countries.reverse()
 
-        if country in countries:
-            countries.remove(country)
+            if country in countries:
+                countries.remove(country)
 
         countries.append(country)
         countries.reverse()
@@ -124,23 +125,20 @@ class VPNSwitcher(rumps.App):
         self.menu.get("Locations").get("Recent").clear()
         recent = self.menu.get("Locations").get("Recent")
 
-        with open(self.recent, "w") as f:
-            for c in countries[:5]:
-                f.write(c.strip() + "\n")
-
-                recent.add(rumps.MenuItem(c, callback=app.switch))
-
+        for c in countries[:5]:
+            recent.add(rumps.MenuItem(c, callback=app.switch))
         recent.get(country).state = 1
+
+        open(self.recent, "w").write(json.dumps(countries[:5]))
 
     def set_recent(self):
         recent = self.menu.get("Locations").get("Recent")
 
         if os.path.exists(self.recent):
-            with open(self.recent, "rb") as f:
-                for country in f.read().decode("UTF-8").splitlines():
-                    recent.add(rumps.MenuItem(country, callback=app.switch))
-                    if country == self.current:
-                        recent.get(self.current).state = 1
+            for country in json.loads(open(self.recent, "r").read()):
+                recent.add(rumps.MenuItem(country, callback=app.switch))
+                if country == self.current:
+                    recent.get(self.current).state = 1
 
     def get_default_gateway(self):
         response = subprocess.run(
