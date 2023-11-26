@@ -15,6 +15,7 @@ class VPNSwitcher(rumps.App):
         self.preferences = os.path.join(self.app_dir, "preferences.json")
         self.conf = os.path.join(self.app_dir, "conf/")
         self.recent = os.path.join(self.app_dir, "recent.json")
+        self.quit_button = None
 
         os.makedirs(self.conf, exist_ok=True)
 
@@ -72,10 +73,10 @@ class VPNSwitcher(rumps.App):
     def _add_location(self, location):
         locations = self.menu.get("Locations")
 
-        if not locations.get(location.continent):
-            locations.add(rumps.MenuItem(location.continent, None))
-        if location not in locations.get(location.continent):
-            locations.get(location.continent).add(
+        if not locations.get(location.region):
+            locations.add(rumps.MenuItem(location.region, None))
+        if location not in locations.get(location.region):
+            locations.get(location.region).add(
                 rumps.MenuItem(location, callback=app.switch)
             )
 
@@ -86,28 +87,33 @@ class VPNSwitcher(rumps.App):
                 if f.endswith(".ovpn"):
                     yield Location(os.path.join(root, f))
 
-    def get_location(self, location):
-        locations = self.menu.get("Locations")
-
-        for region in locations.keys():
-            if region not in ["Add", "Recent"]:
-                if isinstance(locations[region], rumps.MenuItem):
-                    for country in locations[region].keys():
-                        if country == location:
-                            return (region, country)
+    def get_location(self, title):
+        for loc in self.get_locations():
+            if loc.title == title:
+                return loc
 
     def get_current(self):
         response = self.run_commands("nvram get openvpncl_remoteip")
         if response and response.stdout:
             server = "".join(chr(x) for x in response.stdout).strip()
 
-            for location in self.get_locations():
-                if location.server == server:
-                    region, country = self.get_location(location.name)
-                    self.menu.get("Locations")[region][country].state = 1
-                    self.current = country
-                    self.menu.add(rumps.MenuItem(country))
-                    self.menu.get(self.current).state = 1
+            for loc in self.get_locations():
+                if loc.server == server:
+                    self.menu.get("Locations")[loc.region][loc.title].state = 1
+                    self.set_current(loc.title)
+
+    def set_current(self, country):
+        if "Quit" in self.menu.keys():
+            self.menu.pop("Quit")
+
+        if hasattr(self, "current"):
+            self.menu.pop(self.current)
+
+        self.menu.add(rumps.MenuItem(country))
+        self.menu.get(country).state = 1
+
+        self.menu.add(rumps.MenuItem("Quit", rumps.quit_application))
+        self.current = country
 
     def add_recent(self, country):
         countries = []
@@ -122,17 +128,12 @@ class VPNSwitcher(rumps.App):
         countries.append(country)
         countries.reverse()
 
-        self.menu.get("Locations").get("Recent").clear()
-        recent = self.menu.get("Locations").get("Recent")
-
-        for c in countries[:5]:
-            recent.add(rumps.MenuItem(c, callback=app.switch))
-        recent.get(country).state = 1
-
         open(self.recent, "w").write(json.dumps(countries[:5]))
+        self.set_recent()
 
     def set_recent(self):
         recent = self.menu.get("Locations").get("Recent")
+        recent.clear()
 
         if os.path.exists(self.recent):
             for country in json.loads(open(self.recent, "r").read()):
@@ -169,7 +170,7 @@ class VPNSwitcher(rumps.App):
 
     def switch(self, menu_item):
         for location in self.get_locations():
-            if location.name == menu_item.title:
+            if location.title == menu_item.title:
                 commands = [
                     "stopservice openvpn",
                     f"nvram set openvpncl_remoteip={location.server}",
@@ -180,17 +181,15 @@ class VPNSwitcher(rumps.App):
                 response = self.run_commands(commands)
 
                 if response and not response.stderr:
-                    region, country = self.get_location(menu_item.title)
-                    previous_region, previous_country = self.get_location(
-                        self.menu.get(self.current).title
-                    )
-                    self.menu.get("Locations")[region][country].state = 1
-                    self.menu.get(self.current).title = country
-                    self.menu.get(self.current).state = 1
-                    self.menu.get("Locations")[previous_region][
-                        previous_country
-                    ].state = 0
-                    self.add_recent(country)
+                    locations = self.menu.get("Locations")
+
+                    if hasattr(self, "current"):
+                        previous = self.get_location(self.current)
+                        locations[previous.region][previous.title].state = 0
+
+                    locations[location.region][location.title].state = 1
+                    self.set_current(location.title)
+                    self.add_recent(location.title)
                     return
 
 

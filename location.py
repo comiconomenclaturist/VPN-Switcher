@@ -8,31 +8,31 @@ class Location:
 
     def __init__(self, file):
         self.file = file
-        self.continent = "Misc"
+        self.region = "Misc"
         self.country = ""
         self.flag = ""
 
         regex = re.compile(
-            r"my_expressvpn_(?P<country>\w+)(?:_-_)?(?P<region>\w+)?(?:_-_(?P<number>\d))?_udp\.ovpn"
+            r"my_expressvpn_(?P<country>\w+)(?:_-_)?(?P<area>\w+)?(?:_-_(?P<number>\d))?_udp\.ovpn"
         )
         match = re.match(regex, os.path.basename(file))
         if match:
             self.country = (match.group("country") or "").upper().replace("_", " ")
-            self.region = (match.group("region") or "").title().replace("_", " ")
+            self.area = (match.group("area") or "").title().replace("_", " ")
             self.number = match.group("number") or ""
 
         if self.country:
-            for continent, countries in self.COUNTRY_CODES.items():
+            for region, countries in self.COUNTRY_CODES.items():
                 for code, country in countries.items():
                     if country.lower() == self.country.lower():
-                        self.continent = continent
+                        self.region = region
                         self.country = country
                         box = lambda ch: chr(ord(ch) + 0x1F1A5)
                         self.flag = box(code[0]) + box(code[1])
 
     @property
-    def name(self):
-        text = " - ".join(filter(None, [self.country, self.region]))
+    def title(self):
+        text = " - ".join(filter(None, [self.country, self.area]))
         if self.number:
             return f"{self.flag} {text} [{self.number}]"
         return f"{self.flag} {text}"
@@ -45,4 +45,4 @@ class Location:
                 return server
 
     def __str__(self):
-        return self.name
+        return self.title
