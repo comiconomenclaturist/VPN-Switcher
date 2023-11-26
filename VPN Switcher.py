@@ -135,11 +135,12 @@ class VPNSwitcher(rumps.App):
     def set_recent(self):
         recent = self.menu.get("Locations").get("Recent")
 
-        with open(self.recent, "rb") as f:
-            for country in f.read().decode("UTF-8").splitlines():
-                recent.add(rumps.MenuItem(country, callback=app.switch))
-                if country == self.current:
-                    recent.get(self.current).state = 1
+        if os.path.exists(self.recent):
+            with open(self.recent, "rb") as f:
+                for country in f.read().decode("UTF-8").splitlines():
+                    recent.add(rumps.MenuItem(country, callback=app.switch))
+                    if country == self.current:
+                        recent.get(self.current).state = 1
 
     def get_default_gateway(self):
         response = subprocess.run(
