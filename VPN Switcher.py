@@ -1,54 +1,9 @@
 import rumps
 import os
-import re
 import json
 import subprocess
 import shutil
-
-
-class Location:
-    COUNTRY_CODES = json.loads(open("country_codes.json", "r", encoding="utf-8").read())
-
-    def __init__(self, file):
-        self.file = file
-        self.continent = "Misc"
-        self.country = ""
-        self.flag = ""
-
-        regex = re.compile(
-            r"my_expressvpn_(?P<country>\w+)(?:_-_)?(?P<region>\w+)?(?:_-_(?P<number>\d))?_udp\.ovpn"
-        )
-        match = re.match(regex, os.path.basename(file))
-        if match:
-            self.country = (match.group("country") or "").upper().replace("_", " ")
-            self.region = (match.group("region") or "").title().replace("_", " ")
-            self.number = match.group("number") or ""
-
-        if self.country:
-            for continent, countries in self.COUNTRY_CODES.items():
-                for code, country in countries.items():
-                    if country.lower() == self.country.lower():
-                        self.continent = continent
-                        self.country = country
-                        box = lambda ch: chr(ord(ch) + 0x1F1A5)
-                        self.flag = box(code[0]) + box(code[1])
-
-    @property
-    def name(self):
-        text = " - ".join(filter(None, [self.country, self.region]))
-        if self.number:
-            return f"{self.flag} {text} [{self.number}]"
-        return f"{self.flag} {text}"
-
-    @property
-    def server(self):
-        for line in open(self.file).readlines():
-            if line.startswith("remote "):
-                server = line.split()[1]
-                return server
-
-    def __str__(self):
-        return self.name
+from location import Location
 
 
 class VPNSwitcher(rumps.App):
@@ -59,13 +14,17 @@ class VPNSwitcher(rumps.App):
         self.app_dir = rumps.application_support(self.name)
         self.preferences = os.path.join(self.app_dir, "preferences.json")
         self.conf = os.path.join(self.app_dir, "conf/")
+        self.recent = os.path.join(self.app_dir, "recent.txt")
 
         os.makedirs(self.conf, exist_ok=True)
 
         if not os.path.isfile(self.preferences):
-            self.set_preferences()
+            self.set_preferences(None)
 
-        self.pref = json.loads(open(self.preferences, "r").read())
+        if os.path.exists(self.preferences):
+            self.pref = json.loads(open(self.preferences, "r").read())
+        else:
+            self.pref = None
 
     def about(self, _):
         rumps.alert(
@@ -77,10 +36,13 @@ class VPNSwitcher(rumps.App):
         )
 
     def set_preferences(self, _, data={}):
-        window = rumps.Window(dimensions=(100, 20), cancel=True)
-        window.title = "Configure the VPN Switcher for SSH access to your DD-WRT router"
+        window = rumps.Window(
+            dimensions=(100, 20),
+            cancel=True,
+            title="Configure the VPN Switcher for SSH access to your DD-WRT router",
+        )
         fields = {
-            "IP address": self.get_default_gateway_ip(),
+            "IP address": self.get_default_gateway(),
             "SSH port": 22,
             "username": "root",
         }
@@ -96,9 +58,12 @@ class VPNSwitcher(rumps.App):
         f.close()
 
     def add_location(self, _):
-        window = rumps.Window(dimensions=(300, 50), cancel=True)
-        window.title = "Import Express VPN ovpn file"
-        window.message = "Drag and drop a file here"
+        window = rumps.Window(
+            dimensions=(300, 50),
+            cancel=True,
+            title="Import Express VPN ovpn file",
+            message="Drag and drop a file here",
+        )
         response = window.run()
         if response.clicked and response.text:
             file = shutil.copy(response.text, self.conf)
@@ -121,24 +86,62 @@ class VPNSwitcher(rumps.App):
                 if f.endswith(".ovpn"):
                     yield Location(os.path.join(root, f))
 
+    def get_location(self, location):
+        locations = self.menu.get("Locations")
+
+        for region in locations.keys():
+            if region not in ["Add", "Recent"]:
+                if isinstance(locations[region], rumps.MenuItem):
+                    for country in locations[region].keys():
+                        if country == location:
+                            return (region, country)
+
     def get_current(self):
         response = self.run_commands("nvram get openvpncl_remoteip")
-        if response.stdout:
+        if response and response.stdout:
             server = "".join(chr(x) for x in response.stdout).strip()
-            locations = self.menu.get("Locations")
 
             for location in self.get_locations():
                 if location.server == server:
-                    for key in locations.keys():
-                        if location.continent == key:
-                            for loc in locations.get(key):
-                                if loc == location.name:
-                                    locations[key][loc].state = 1
-                                    self.current = loc
-                                    self.menu.add(rumps.MenuItem(loc))
-                                    self.menu.get(self.current).state = 1
+                    region, country = self.get_location(location.name)
+                    self.menu.get("Locations")[region][country].state = 1
+                    self.current = country
+                    self.menu.add(rumps.MenuItem(country))
+                    self.menu.get(self.current).state = 1
 
-    def get_default_gateway_ip(self):
+    def add_recent(self, country):
+        with open(self.recent, "rb") as f:
+            countries = f.read().decode("UTF-8").splitlines()
+
+        countries.reverse()
+
+        if country in countries:
+            countries.remove(country)
+
+        countries.append(country)
+        countries.reverse()
+
+        self.menu.get("Locations").get("Recent").clear()
+        recent = self.menu.get("Locations").get("Recent")
+
+        with open(self.recent, "w") as f:
+            for c in countries[:5]:
+                f.write(c.strip() + "\n")
+
+                recent.add(rumps.MenuItem(c, callback=app.switch))
+
+        recent.get(country).state = 1
+
+    def set_recent(self):
+        recent = self.menu.get("Locations").get("Recent")
+
+        with open(self.recent, "rb") as f:
+            for country in f.read().decode("UTF-8").splitlines():
+                recent.add(rumps.MenuItem(country, callback=app.switch))
+                if country == self.current:
+                    recent.get(self.current).state = 1
+
+    def get_default_gateway(self):
         response = subprocess.run(
             ["route", "-n", "get", "default"],
             stdout=subprocess.PIPE,
@@ -151,42 +154,45 @@ class VPNSwitcher(rumps.App):
                     return line.split(":")[1].strip()
 
     def run_commands(self, commands):
-        response = subprocess.run(
-            [
-                "ssh",
-                "-qp",
-                self.pref["SSH port"],
-                f"{self.pref['username']}@{self.pref['IP address']}",
-                commands,
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        return response
+        if self.pref:
+            response = subprocess.run(
+                [
+                    "ssh",
+                    "-qp",
+                    self.pref["SSH port"],
+                    f"{self.pref['username']}@{self.pref['IP address']}",
+                    commands,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            return response
 
-    def switch(self, location):
-        for loc in self.get_locations():
-            if loc.name == location.title:
+    def switch(self, menu_item):
+        for location in self.get_locations():
+            if location.name == menu_item.title:
                 commands = [
                     "stopservice openvpn",
-                    f"nvram set openvpncl_remoteip={loc.server}",
+                    f"nvram set openvpncl_remoteip={location.server}",
                     "nvram commit",
                     "startservice openvpn",
                 ]
                 commands = "; ".join(commands)
                 response = self.run_commands(commands)
-                locations = self.menu.get("Locations")
 
-                if not response.stderr:
-                    for key in locations.keys():
-                        if isinstance(locations[key], rumps.MenuItem):
-                            for country in locations[key].keys():
-                                if country == location.title:
-                                    locations[key][country].state = 1
-                                    self.menu.get(self.current).title = country
-                                    self.menu.get(self.current).state = 1
-                                else:
-                                    locations[key][country].state = 0
+                if response and not response.stderr:
+                    region, country = self.get_location(menu_item.title)
+                    previous_region, previous_country = self.get_location(
+                        self.menu.get(self.current).title
+                    )
+                    self.menu.get("Locations")[region][country].state = 1
+                    self.menu.get(self.current).title = country
+                    self.menu.get(self.current).state = 1
+                    self.menu.get("Locations")[previous_region][
+                        previous_country
+                    ].state = 0
+                    self.add_recent(country)
+                    return
 
 
 app = VPNSwitcher()
@@ -198,6 +204,8 @@ app.menu = [
         [
             rumps.MenuItem("Add", callback=app.add_location),
             None,
+            [rumps.MenuItem("Recent"), [None]],
+            None,
         ],
     ],
     None,
@@ -207,6 +215,7 @@ for location in app.get_locations():
     app._add_location(location)
 
 app.get_current()
+app.set_recent()
 
 if __name__ == "__main__":
     app.run()
