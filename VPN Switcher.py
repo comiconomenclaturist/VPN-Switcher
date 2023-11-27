@@ -93,14 +93,15 @@ class VPNSwitcher(rumps.App):
                 return loc
 
     def get_current(self):
-        response = self.run_commands("nvram get openvpncl_remoteip")
-        if response and response.stdout:
-            server = "".join(chr(x) for x in response.stdout).strip()
+        if self.pref and self.get_default_gateway() == self.pref["IP address"]:
+            response = self.run_commands("nvram get openvpncl_remoteip")
+            if response and response.stdout:
+                server = "".join(chr(x) for x in response.stdout).strip()
 
-            for loc in self.get_locations():
-                if loc.server == server:
-                    self.menu.get("Locations")[loc.region][loc.title].state = 1
-                    self.set_current(loc.title)
+                for loc in self.get_locations():
+                    if loc.server == server:
+                        self.menu.get("Locations")[loc.region][loc.title].state = 1
+                        self.set_current(loc.title)
 
     def set_current(self, country):
         if "Quit" in self.menu.keys():
@@ -138,7 +139,7 @@ class VPNSwitcher(rumps.App):
         if os.path.exists(self.recent):
             for country in json.loads(open(self.recent, "r").read()):
                 recent.add(rumps.MenuItem(country, callback=app.switch))
-                if country == self.current:
+                if hasattr(self, "current") and country == self.current:
                     recent.get(self.current).state = 1
 
     def get_default_gateway(self):
@@ -214,6 +215,9 @@ for location in app.get_locations():
 
 app.get_current()
 app.set_recent()
+
+if not "Quit" in app.menu.keys():
+    app.menu.add(rumps.MenuItem("Quit", rumps.quit_application))
 
 if __name__ == "__main__":
     app.run()
